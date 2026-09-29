@@ -1,0 +1,77 @@
+{% extends 'mapping/base.html' %}
+
+{% block title %}{{ poi.poi_name }} — POI Detail{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+
+  <a href="{% url 'spatial_analysis:dashboard' %}" class="btn btn-outline-secondary btn-sm mb-4">&larr; Back to Dashboard</a>
+
+  <h1>{{ poi.poi_name }}</h1>
+  <p class="text-muted">{{ poi.get_poi_type_display }}</p>
+
+  <div class="row mt-4">
+    <div class="col-md-6">
+      <div class="card mb-4">
+        <div class="card-body">
+          <h5 class="card-title">Details</h5>
+          <p class="card-text">{{ poi.description }}</p>
+          <ul class="list-unstyled">
+            <li><strong>Rating:</strong> ⭐ {{ poi.rating }}</li>
+            <li><strong>Visitors per day:</strong> {{ poi.visitors_per_day }}</li>
+            <li><strong>Coordinates:</strong> {{ poi.geom.y }}, {{ poi.geom.x }}</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card mb-4">
+        <div class="card-body">
+          <h5 class="card-title">Nearby Roads (within ~1km)</h5>
+          {% if nearby_roads %}
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Road Name</th>
+                <th>Type</th>
+                <th>Distance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for road in nearby_roads %}
+              <tr>
+                <td>{{ road.road_name }}</td>
+                <td>{{ road.get_road_type_display }}</td>
+                <td>{{ road.distance.m|floatformat:0 }} m</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="text-muted">No roads found within range.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="poi-map" style="height: 400px;" class="mb-5"></div>
+
+</div>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  const poiGeom = {{ poi_json|safe }};
+  const map = L.map('poi-map').setView([poiGeom.coordinates[1], poiGeom.coordinates[0]], 15);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles © Esri',
+      maxZoom: 19
+  }).addTo(map);
+  L.marker([poiGeom.coordinates[1], poiGeom.coordinates[0]])
+      .addTo(map)
+      .bindPopup('<b>{{ poi.poi_name|escapejs }}</b>')
+      .openPopup();
+</script>
+{% endblock %}
