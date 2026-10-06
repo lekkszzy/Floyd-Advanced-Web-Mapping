@@ -1,0 +1,58 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Send Referer to tile servers (OSM blocks requests without it) -->
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Cities Web Map - Advanced Web Mapping</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- Part 4.1: MarkerCluster CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+</head>
+<body>
+    <!-- Map Container -->
+    <div id="map"></div>
+
+    <!-- Control Panel -->
+    <div class="control-panel">
+        <h3>City Search</h3>
+        <input type="text" id="searchInput" class="search-box" placeholder="Search cities...">
+        <button id="resetBtn" class="btn-reset" type="button">Reset View</button>
+        <!-- Part 4.2: GeoJSON export -->
+        <button id="downloadBtn" class="btn-download" type="button">Download GeoJSON</button>
+        <div id="results" class="results"></div>
+    </div>
+
+    <!-- Info Box -->
+    <div class="info-box">
+        <h4>Map Information</h4>
+        <p>Cities loaded: <strong id="cityCount">0</strong></p>
+        <p>Showing: <strong id="visibleCount">0</strong></p>
+        <p>Click on markers to view city details. Use the layer control (top left) to toggle the heatmap.</p>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div class="loading" id="loading">Loading cities data...</div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Part 4.1: MarkerCluster JS -->
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+
+    <!-- Part 4.3: Heatmap JS -->
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+    <!-- Custom Map Script -->
+    <script src="{% static 'js/map.js' %}"></script>
+</body>
+</html>
