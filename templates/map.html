@@ -17,6 +17,74 @@
 
     <!-- Custom Styles -->
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+
+    <!-- Week 5: proximity search styles -->
+    <style>
+        .d-none { display: none !important; }
+
+        .proximity-section {
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid #ddd;
+        }
+        .proximity-section h3 { margin: 0 0 8px; }
+
+        .mode-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+        .btn-mode {
+            flex: 1;
+            padding: 8px 10px;
+            border: 1px solid #0d6efd;
+            background: #fff;
+            color: #0d6efd;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .btn-mode:hover { background: #e7f1ff; }
+        .btn-mode.active { background: #0d6efd; color: #fff; }
+        #radius-search-btn { border-color: #198754; color: #198754; }
+        #radius-search-btn:hover { background: #e8f5ee; }
+        #radius-search-btn.active { background: #198754; color: #fff; }
+
+        #radius-control {
+            display: block;
+            margin-top: 8px;
+            font-size: 13px;
+        }
+        #radius-input {
+            width: 100px;
+            margin-left: 6px;
+            padding: 4px 6px;
+        }
+
+        #proximity-status {
+            margin: 8px 0 4px;
+            font-size: 13px;
+            color: #555;
+        }
+        #proximity-status.error { color: #dc3545; }
+
+        #proximity-results {
+            max-height: 260px;
+            overflow-y: auto;
+            font-size: 13px;
+        }
+        #proximity-results ol { margin: 6px 0 0; padding-left: 22px; }
+        #proximity-results li { padding: 3px 0; cursor: pointer; }
+        #proximity-results li:hover { text-decoration: underline; }
+
+        .rank-marker {
+            background: #0d6efd;
+            color: #fff;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            font-size: 12px;
+            font-weight: bold;
+            text-align: center;
+            line-height: 22px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+        }
+    </style>
 </head>
 <body>
     <!-- Map Container -->
@@ -30,6 +98,23 @@
         <!-- Part 4.2: GeoJSON export -->
         <button id="downloadBtn" class="btn-download" type="button">Download GeoJSON</button>
         <div id="results" class="results"></div>
+
+        <!-- Week 5: proximity search -->
+        <div class="proximity-section">
+            <h3>Proximity Search</h3>
+            <div class="mode-buttons">
+                <button id="nearest-search-btn" class="btn-mode" type="button">Find 10 nearest</button>
+                <button id="radius-search-btn" class="btn-mode" type="button">Search within radius</button>
+            </div>
+            <label id="radius-control" class="d-none" for="radius-input">
+                Radius (km)
+                <input id="radius-input" type="number" min="1" max="20000" value="100">
+            </label>
+            <p id="proximity-status" role="status" aria-live="polite">
+                Choose a search, then click a city marker.
+            </p>
+            <div id="proximity-results" aria-live="polite"></div>
+        </div>
     </div>
 
     <!-- Info Box -->

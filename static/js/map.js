@@ -18,6 +18,13 @@ let cityCount = 0;
 const API_URL = '/api/cities/';
 const GEOJSON_URL = '/api/cities/geojson/';
 
+// Week 5: heatmap colour palettes per mode
+const HEAT_GRADIENTS = {
+    default: { 0.2: '#0000ff', 0.5: '#00ffff', 0.75: '#ffff00', 1: '#ff0000' },
+    nearest: { 0.2: '#00ffff', 0.5: '#00ff00', 0.75: '#ffff00', 1: '#ff7f00' },
+    radius:  { 0.2: '#00ff00', 0.5: '#ffff00', 0.75: '#ff7f00', 1: '#ff0000' }
+};
+
 // Part 4.1: cluster group holds all markers
 const clusterGroup = L.markerClusterGroup({
     showCoverageOnHover: false,
@@ -30,7 +37,8 @@ const heatLayer = L.heatLayer([], {
     radius: 35,
     blur: 25,
     maxZoom: 7,
-    minOpacity: 0.3
+    minOpacity: 0.3,
+    gradient: HEAT_GRADIENTS.default
 });
 
 // Layer control to switch markers / heatmap on and off
@@ -96,6 +104,14 @@ function addMarkersToMap(cities) {
         marker.bindPopup(createPopupContent(city));
         marker.bindTooltip(city.name);
 
+        // Week 5: clicking a city marker runs the armed proximity search
+        marker.on('click', () => {
+            if (proximityMode) {
+                marker.closePopup();
+                runProximitySearch(city);
+            }
+        });
+
         clusterGroup.addLayer(marker);
         markers[city.id] = marker;
     });
@@ -115,6 +131,7 @@ function updateHeatmap(cities) {
             0.3 + 0.7 * ((Number(c.population) || 0) / maxPop)   // weight by population
         ]);
 
+    heatLayer.setOptions({ gradient: HEAT_GRADIENTS.default });
     heatLayer.setLatLngs(heatData);
 }
 
@@ -190,13 +207,208 @@ function goToCity(cityId) {
     });
 }
 
+// ===================================================================
+// Week 5: Proximity search
+// ===================================================================
+let proximityMode = null;      // null | 'nearest' | 'radius'
+let searchMarker = null;
+let radiusCircle = null;
+let proximityLayer;
+let radiusLayer;
+
+function setupProximitySearch(map) {
+    proximityLayer = L.layerGroup().addTo(map);
+    radiusLayer = L.layerGroup().addTo(map);
+
+    document.getElementById('nearest-search-btn').addEventListener('click', () => {
+        setProximityMode(map, 'nearest');
+    });
+    document.getElementById('radius-search-btn').addEventListener('click', () => {
+        setProximityMode(map, 'radius');
+    });
+}
+
+function setProximityMode(map, mode) {
+    proximityMode = proximityMode === mode ? null : mode;
+
+    document.getElementById('radius-control').classList.toggle(
+        'd-none', proximityMode !== 'radius'
+    );
+    document.getElementById('nearest-search-btn').classList.toggle(
+        'active', proximityMode === 'nearest'
+    );
+    document.getElementById('radius-search-btn').classList.toggle(
+        'active', proximityMode === 'radius'
+    );
+    map.getContainer().style.cursor = proximityMode ? 'crosshair' : '';
+
+    setStatus(proximityMode
+        ? 'Now click a city marker (zoom in on a cluster if needed).'
+        : 'Choose a search, then click a city marker.');
+    clearProximityResults(map);
+}
+
+function setStatus(message, isError = false) {
+    const status = document.getElementById('proximity-status');
+    status.textContent = message;
+    status.classList.toggle('error', isError);
+}
+
+async function runProximitySearch(city) {
+    if (!proximityMode) return;
+
+    // These coordinates come from the selected city's existing API record.
+    const lat = Number(city.latitude);
+    const lng = Number(city.longitude);
+    const radiusKm = Number(document.getElementById('radius-input').value);
+    const isRadiusSearch = proximityMode === 'radius';
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        setStatus(`${city.name} has invalid coordinates in the API response.`, true);
+        return;
+    }
+    if (isRadiusSearch && (!Number.isFinite(radiusKm) || radiusKm <= 0 || radiusKm > 20000)) {
+        setStatus('Enter a radius greater than 0 and no more than 20000 km.', true);
+        return;
+    }
+
+    setStatus('Searching…');
+    clearProximityResults(map);
+
+    try {
+        const response = await fetch(
+            isRadiusSearch ? '/api/cities/radius/' : '/api/cities/nearest/',
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(isRadiusSearch
+                    ? { lat, lng, radius_km: radiusKm }
+                    : { lat, lng })
+            }
+        );
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `Search failed (${response.status})`);
+
+        // Origin marker
+        searchMarker = L.marker([lat, lng])
+            .bindTooltip(`Search origin: ${city.name}`)
+            .addTo(map);
+
+        const cities = isRadiusSearch ? data.cities : data.nearest_cities;
+        const heading = isRadiusSearch
+            ? `${data.total_found} cities within ${data.radius_km} km of ${city.name}`
+            : `${data.total_found} nearest cities to ${city.name}`;
+
+        showProximityResults(cities, heading);
+        updateHeatmapForResults(cities, isRadiusSearch ? 'radius' : 'nearest');
+
+        // Recentre on the selected city (no animation)
+        map.setView([lat, lng], Math.max(map.getZoom(), 6), { animate: false });
+
+        if (isRadiusSearch) {
+            radiusCircle = L.circle([lat, lng], {
+                radius: radiusKm * 1000,     // Leaflet uses metres
+                color: '#198754',
+                fillOpacity: 0.08
+            }).addTo(map);
+
+            cities.forEach((result) => {
+                L.circleMarker([result.coordinates.lat, result.coordinates.lng], {
+                    radius: 7,
+                    color: '#198754',
+                    fillColor: '#198754',
+                    fillOpacity: 0.7
+                })
+                    .bindTooltip(`${result.name} — ${result.distance_km} km`)
+                    .addTo(radiusLayer);
+            });
+
+            map.fitBounds(radiusCircle.getBounds(), {
+                padding: [30, 30],
+                animate: false
+            });
+            map.setView([lat, lng], map.getZoom(), { animate: false });
+        } else {
+            // Numbered markers for the nearest ten
+            cities.forEach((result) => {
+                L.marker([result.coordinates.lat, result.coordinates.lng], {
+                    icon: L.divIcon({
+                        className: 'rank-marker',
+                        html: String(result.rank),
+                        iconSize: [26, 26],
+                        iconAnchor: [13, 13]
+                    })
+                })
+                    .bindTooltip(`#${result.rank} ${result.name} — ${result.distance_km} km`)
+                    .addTo(proximityLayer);
+            });
+        }
+
+        setStatus('Search complete.');
+    } catch (error) {
+        setStatus(error.message, true);
+    }
+}
+
+function showProximityResults(cities, heading) {
+    const results = document.getElementById('proximity-results');
+    results.replaceChildren();
+
+    const title = document.createElement('strong');
+    title.textContent = heading;
+    results.append(title);
+
+    const list = document.createElement('ol');
+    cities.forEach((result) => {
+        const item = document.createElement('li');
+        item.textContent = `${result.name}, ${result.country} — ${result.distance_km} km`;
+        item.title = 'Zoom to this city';
+        item.addEventListener('click', () => {
+            map.setView([result.coordinates.lat, result.coordinates.lng], 8);
+        });
+        list.append(item);
+    });
+    results.append(list);
+}
+
+function updateHeatmapForResults(cities, mode) {
+    const heatData = cities
+        .map(result => [result.coordinates.lat, result.coordinates.lng, 1])
+        .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+
+    if (!map.hasLayer(heatLayer)) map.addLayer(heatLayer);   // show heatmap for results
+    heatLayer.setOptions({ gradient: HEAT_GRADIENTS[mode] });
+    heatLayer.setLatLngs(heatData);
+}
+
+function clearProximityResults(map) {
+    if (searchMarker) map.removeLayer(searchMarker);
+    if (radiusCircle) map.removeLayer(radiusCircle);
+    searchMarker = radiusCircle = null;
+    proximityLayer?.clearLayers();
+    radiusLayer?.clearLayers();
+    document.getElementById('proximity-results').replaceChildren();
+
+    // Restore the full-city heatmap
+    updateHeatmap(citiesData);
+}
+
 // ===== Reset =====
 document.getElementById('resetBtn').addEventListener('click', function () {
-    map.setView(DUBLIN, DEFAULT_ZOOM);
     document.getElementById('searchInput').value = '';
     document.getElementById('results').innerHTML = '';
     addMarkersToMap(citiesData);
-    updateHeatmap(citiesData);
+
+    // Week 5: clear proximity mode, overlays, and results
+    proximityMode = null;
+    document.getElementById('nearest-search-btn').classList.remove('active');
+    document.getElementById('radius-search-btn').classList.remove('active');
+    document.getElementById('radius-control').classList.add('d-none');
+    map.getContainer().style.cursor = '';
+    setStatus('Choose a search, then click a city marker.');
+    clearProximityResults(map);   // also restores the full-city heatmap
+
+    map.setView(DUBLIN, DEFAULT_ZOOM, { animate: false });
 });
 
 // ===== GeoJSON export (Part 4.2) =====
@@ -229,4 +441,5 @@ function showLoading(show) {
     document.getElementById('loading').style.display = show ? 'block' : 'none';
 }
 
+setupProximitySearch(map);
 initMap();
