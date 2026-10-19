@@ -236,6 +236,10 @@ def api_info(request):
 # Week 5: proximity search
 # ---------------------------------------------------------------------------
 
+# Only the fields the proximity response actually uses
+PROXIMITY_FIELDS = ("id", "name", "country", "population", "location")
+
+
 def parse_search_parameters(data, include_radius=False):
     try:
         lat = float(data["lat"])
@@ -297,7 +301,9 @@ def find_nearest_cities(request):
 
     lat, lng, _ = parameters
     search_point = Point(lng, lat, srid=4326)
-    cities = City.objects.filter(location__isnull=False).annotate(
+    cities = City.objects.filter(location__isnull=False).only(
+        *PROXIMITY_FIELDS
+    ).annotate(
         distance=DistanceFunction("location", search_point)
     ).order_by("distance")[:10]
     results = [serialize_city(city, rank) for rank, city in enumerate(cities, 1)]
@@ -321,6 +327,8 @@ def radius_search(request):
     cities = City.objects.filter(
         location__isnull=False,
         location__distance_lte=(search_point, D(km=radius_km)),
+    ).only(
+        *PROXIMITY_FIELDS
     ).annotate(
         distance=DistanceFunction("location", search_point)
     ).order_by("distance")
