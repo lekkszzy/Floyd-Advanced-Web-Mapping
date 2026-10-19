@@ -15,4 +15,8 @@ urlpatterns = [
     path('stats/', views.city_statistics, name='city-statistics'),
     path('countries/', views.countries_list, name='countries-list'),
     path('info/', views.api_info, name='api-info'),
+
+    # Week 5 proximity search
+    path('nearest/', views.find_nearest_cities, name='find-nearest-cities'),
+    path('radius/', views.radius_search, name='radius-search'),
 ]

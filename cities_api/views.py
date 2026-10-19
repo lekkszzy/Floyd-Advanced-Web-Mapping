@@ -6,7 +6,7 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.gis.geos import Point
 from django.db.models import Count, Avg, Q, Sum
-from django.contrib.gis.measure import Distance
+from django.contrib.gis.measure import Distance, D
 from django.contrib.gis.db.models.functions import Distance as DistanceFunction
 
 from .models import City
@@ -208,6 +208,8 @@ def api_info(request):
         'cities_geojson': f"{base_url}geojson/",
         'cities_within_radius': f"{base_url}within-radius/",
         'cities_in_bbox': f"{base_url}bbox/",
+        'nearest_cities': f"{base_url}nearest/",
+        'radius_search': f"{base_url}radius/",
         'statistics': f"{base_url}stats/",
         'countries': f"{base_url}countries/",
         'api_docs': request.build_absolute_uri('/api/docs/'),
@@ -222,8 +224,111 @@ def api_info(request):
             'City CRUD operations',
             'GeoJSON output',
             'Spatial queries (radius, bounding box)',
+            'Proximity search (nearest, radius)',
             'Filtering and search',
             'Pagination',
             'Statistics'
         ]
+    })
+
+
+# ---------------------------------------------------------------------------
+# Week 5: proximity search
+# ---------------------------------------------------------------------------
+
+def parse_search_parameters(data, include_radius=False):
+    try:
+        lat = float(data["lat"])
+        lng = float(data["lng"])
+    except (KeyError, TypeError, ValueError):
+        return None, Response(
+            {"error": "Provide numeric lat and lng values."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    radius_km = None
+    if include_radius:
+        try:
+            radius_km = float(data.get("radius_km", 100))
+        except (TypeError, ValueError):
+            return None, Response(
+                {"error": "radius_km must be a number."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    if not -90 <= lat <= 90 or not -180 <= lng <= 180:
+        return None, Response(
+            {"error": "Latitude must be between -90 and 90 and longitude between -180 and 180."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if include_radius and not 0 < radius_km <= 20000:
+        return None, Response(
+            {"error": "radius_km must be greater than 0 and no more than 20000."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return (lat, lng, radius_km), None
+
+
+def serialize_city(city, rank=None):
+    result = {
+        "id": city.id,
+        "name": city.name,
+        "country": city.country,
+        "population": city.population,
+        "coordinates": {
+            "lat": city.location.y,
+            "lng": city.location.x,
+        },
+        "distance_km": round(city.distance.km, 2),
+    }
+    if rank is not None:
+        result["rank"] = rank
+    return result
+
+
+@api_view(["POST"])
+def find_nearest_cities(request):
+    """POST /api/cities/nearest/ with {"lat": 53.3498, "lng": -6.2603}."""
+    parameters, error = parse_search_parameters(request.data)
+    if error:
+        return error
+
+    lat, lng, _ = parameters
+    search_point = Point(lng, lat, srid=4326)
+    cities = City.objects.filter(location__isnull=False).annotate(
+        distance=DistanceFunction("location", search_point)
+    ).order_by("distance")[:10]
+    results = [serialize_city(city, rank) for rank, city in enumerate(cities, 1)]
+
+    return Response({
+        "search_point": {"lat": lat, "lng": lng},
+        "total_found": len(results),
+        "nearest_cities": results,
+    })
+
+
+@api_view(["POST"])
+def radius_search(request):
+    """POST /api/cities/radius/ with lat, lng, and optional radius_km."""
+    parameters, error = parse_search_parameters(request.data, include_radius=True)
+    if error:
+        return error
+
+    lat, lng, radius_km = parameters
+    search_point = Point(lng, lat, srid=4326)
+    cities = City.objects.filter(
+        location__isnull=False,
+        location__distance_lte=(search_point, D(km=radius_km)),
+    ).annotate(
+        distance=DistanceFunction("location", search_point)
+    ).order_by("distance")
+    results = [serialize_city(city) for city in cities]
+
+    return Response({
+        "search_point": {"lat": lat, "lng": lng},
+        "radius_km": radius_km,
+        "total_found": len(results),
+        "cities": results,
     })
