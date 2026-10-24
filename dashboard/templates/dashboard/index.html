@@ -1,0 +1,550 @@
+<!-- dashboard/templates/dashboard/index.html -->
+{% extends 'dashboard/base.html' %}
+
+{% block title %}Dashboard - European Urban Planning{% endblock %}
+
+{% block head_extra %}
+<style>
+    #map { height: 600px; }
+    .control-panel {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
+    .filter-section {
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 15px;
+    }
+    .layer-toggle { margin: 5px 0; }
+    .stats-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 15px;
+    }
+    .export-btn { margin: 5px; }
+    .loading {
+        display: none;
+        text-align: center;
+        padding: 20px;
+    }
+    .feature-info {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        background: rgba(255,255,255,0.9);
+        padding: 10px;
+        border-radius: 5px;
+        display: none;
+        max-width: 300px;
+        z-index: 1000;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <div class="row">
+        <!-- Control Panel -->
+        <div class="col-md-3">
+            <div class="control-panel">
+                <h5>📊 Data Overview</h5>
+                <div class="stats-card">
+                    <h6>Total Cities: <span id="total-cities">{{ total_cities }}</span></h6>
+                    <h6>Total Regions: <span id="total-regions">{{ total_regions }}</span></h6>
+                </div>
+
+                <!-- Layer Controls -->
+                <div class="filter-section">
+                    <h6>🗺️ Map Layers</h6>
+                    <div class="layer-toggle">
+                        <input type="checkbox" id="show-cities" checked>
+                        <label for="show-cities">Show Cities</label>
+                    </div>
+                    <div class="layer-toggle">
+                        <input type="checkbox" id="show-regions" checked>
+                        <label for="show-regions">Show Regions</label>
+                    </div>
+                    <div class="layer-toggle">
+                        <input type="checkbox" id="cluster-cities">
+                        <label for="cluster-cities">Cluster Cities</label>
+                    </div>
+                </div>
+
+                <!-- Population Filters -->
+                <div class="filter-section">
+                    <h6>👥 Population Filters</h6>
+                    <div class="mb-2">
+                        <label class="form-label">City Population Range</label>
+                        <div class="row">
+                            <div class="col-6">
+                                <input type="number" id="city-pop-min" class="form-control form-control-sm" placeholder="Min" value="0">
+                            </div>
+                            <div class="col-6">
+                                <input type="number" id="city-pop-max" class="form-control form-control-sm" placeholder="Max">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Region Population Range</label>
+                        <div class="row">
+                            <div class="col-6">
+                                <input type="number" id="region-pop-min" class="form-control form-control-sm" placeholder="Min" value="0">
+                            </div>
+                            <div class="col-6">
+                                <input type="number" id="region-pop-max" class="form-control form-control-sm" placeholder="Max">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Area Filters -->
+                <div class="filter-section">
+                    <h6>📏 Area Filters</h6>
+                    <div class="mb-2">
+                        <label class="form-label">City Urban Area (km²)</label>
+                        <div class="row">
+                            <div class="col-6">
+                                <input type="number" id="city-area-min" class="form-control form-control-sm" placeholder="Min" step="0.1">
+                            </div>
+                            <div class="col-6">
+                                <input type="number" id="city-area-max" class="form-control form-control-sm" placeholder="Max" step="0.1">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Region Area (km²)</label>
+                        <div class="row">
+                            <div class="col-6">
+                                <input type="number" id="region-area-min" class="form-control form-control-sm" placeholder="Min">
+                            </div>
+                            <div class="col-6">
+                                <input type="number" id="region-area-max" class="form-control form-control-sm" placeholder="Max">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Category Filters -->
+                <div class="filter-section">
+                    <h6>🏛️ Category Filters</h6>
+                    <div class="mb-2">
+                        <label class="form-label">Country</label>
+                        <select id="country-filter" class="form-select form-select-sm">
+                            <option value="">All Countries</option>
+                            {% for country in countries %}
+                            <option value="{{ country }}">{{ country }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">City Type</label>
+                        <select id="city-type-filter" class="form-select form-select-sm">
+                            <option value="">All Types</option>
+                            {% for city_type in city_types %}
+                            <option value="{{ city_type }}">{{ city_type|title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Region Type</label>
+                        <select id="region-type-filter" class="form-select form-select-sm">
+                            <option value="">All Types</option>
+                            {% for region_type in region_types %}
+                            <option value="{{ region_type }}">{{ region_type|title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="d-grid gap-2 mb-3">
+                    <button id="apply-filters" class="btn btn-primary">Apply Filters</button>
+                    <button id="clear-filters" class="btn btn-outline-secondary">Clear All</button>
+                </div>
+
+                <!-- Export Options -->
+                <div class="filter-section">
+                    <h6>📥 Export Data</h6>
+                    <button id="export-cities" class="btn btn-outline-success export-btn">Cities GeoJSON</button>
+                    <button id="export-regions" class="btn btn-outline-success export-btn">Regions GeoJSON</button>
+                    <button id="export-statistics" class="btn btn-outline-info export-btn">Statistics</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map Container -->
+        <div class="col-md-9">
+            <div class="position-relative">
+                <div id="map"></div>
+                <div class="loading" id="loading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p>Loading data...</p>
+                </div>
+                <div class="feature-info" id="feature-info"></div>
+            </div>
+
+            <!-- Results Summary -->
+            <div class="mt-3">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Cities Displayed</h5>
+                                <h3 class="text-primary" id="cities-count">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Regions Displayed</h5>
+                                <h3 class="text-success" id="regions-count">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Total Population</h5>
+                                <h3 class="text-info" id="total-population">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+       // Initialize map
+    const map = L.map('map').setView([54.5, 15.2], 4);
+
+    const cartoLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© OpenStreetMap contributors © CARTO',
+        subdomains: 'abcd',
+        maxZoom: 19,
+        referrerPolicy: 'strict-origin-when-cross-origin'
+    });
+
+    const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19,
+        referrerPolicy: 'strict-origin-when-cross-origin'
+    });
+
+    osmLayer.addTo(map);
+
+    L.control.layers({
+        "OpenStreetMap": osmLayer,
+        "CartoDB Light": cartoLayer
+    }).addTo(map);
+
+    // Data layers
+    let citiesLayer = L.layerGroup().addTo(map);
+    let regionsLayer = L.layerGroup().addTo(map);
+
+    let currentCities = [];
+    let currentRegions = [];
+
+    // Utility functions
+    function showLoading(show) {
+        const loading = document.getElementById('loading');
+        if (loading) loading.style.display = show ? 'block' : 'none';
+    }
+
+    function getCityColor(cityType) {
+        const colors = {
+            'capital': '#e74c3c',
+            'major': '#f39c12',
+            'regional': '#3498db',
+            'town': '#95a5a6'
+        };
+        return colors[cityType] || '#95a5a6';
+    }
+
+    function getRegionColor(density) {
+        if (density > 500) return '#8e44ad';
+        if (density > 200) return '#e74c3c';
+        if (density > 100) return '#f39c12';
+        if (density > 50) return '#f1c40f';
+        return '#2ecc71';
+    }
+
+    function showFeatureInfo(properties, type) {
+        const info = document.getElementById('feature-info');
+        if (!info) return;
+
+        let content = `<strong>${properties.name || 'Unknown'}</strong><br>`;
+        if (type === 'city') {
+            content += `Population: ${(properties.population || 0).toLocaleString()}<br>`;
+            content += `Type: ${properties.city_type || 'Unknown'}`;
+        } else {
+            content += `Population: ${(properties.total_population || 0).toLocaleString()}<br>`;
+            content += `Area: ${(properties.area_km2 || 0).toLocaleString()} km²<br>`;
+            content += `Type: ${properties.region_type || 'Unknown'}`;
+        }
+        info.innerHTML = content;
+        info.style.display = 'block';
+    }
+
+    function hideFeatureInfo() {
+        const info = document.getElementById('feature-info');
+        if (info) info.style.display = 'none';
+    }
+
+    function extractFeatures(data) {
+        if (data && data.features) {
+            if (Array.isArray(data.features)) return data.features;
+            if (data.features.features && Array.isArray(data.features.features)) return data.features.features;
+        } else if (Array.isArray(data)) {
+            return data;
+        }
+        return [];
+    }
+
+    // Data loading
+    async function loadCities(filters = {}) {
+        try {
+            const params = new URLSearchParams(filters);
+            const response = await fetch(`/api/cities/?${params}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const features = extractFeatures(await response.json());
+            currentCities = features;
+            displayCities(features);
+            return features;
+        } catch (error) {
+            console.error('Error loading cities:', error);
+            currentCities = [];
+            return [];
+        }
+    }
+
+    async function loadRegions(filters = {}) {
+        try {
+            const params = new URLSearchParams(filters);
+            const response = await fetch(`/api/regions/?${params}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const features = extractFeatures(await response.json());
+            currentRegions = features;
+            displayRegions(features);
+            return features;
+        } catch (error) {
+            console.error('Error loading regions:', error);
+            currentRegions = [];
+            return [];
+        }
+    }
+
+    // Display
+    function displayCities(cities) {
+        citiesLayer.clearLayers();
+        if (!Array.isArray(cities)) return;
+
+        cities.forEach((city) => {
+            if (!city.geometry || !city.geometry.coordinates || !city.properties) return;
+
+            const [lng, lat] = city.geometry.coordinates;
+            const props = city.properties;
+            const population = props.population || 0;
+            const radius = Math.max(3, Math.sqrt(population / 10000));
+
+            const marker = L.circleMarker([lat, lng], {
+                radius: radius,
+                fillColor: getCityColor(props.city_type),
+                color: '#ffffff',
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.8
+            });
+
+            marker.bindPopup(`
+                <div>
+                    <h6>${props.name}, ${props.country || 'Unknown'}</h6>
+                    <p><strong>Population:</strong> ${population.toLocaleString()}</p>
+                    <p><strong>Type:</strong> ${props.city_type || 'Unknown'}</p>
+                    ${props.population_density ? `<p><strong>Density:</strong> ${props.population_density.toFixed(1)} people/km²</p>` : ''}
+                </div>
+            `);
+
+            marker.on('mouseover', () => showFeatureInfo(props, 'city'));
+            marker.on('mouseout', hideFeatureInfo);
+            citiesLayer.addLayer(marker);
+        });
+    }
+
+    function displayRegions(regions) {
+        regionsLayer.clearLayers();
+        if (!Array.isArray(regions)) return;
+
+        regions.forEach((region) => {
+            if (!region.geometry || typeof region.geometry === 'string' || !region.properties) return;
+
+            const props = region.properties;
+            const layer = L.geoJSON(region, {
+                style: {
+                    fillColor: getRegionColor(props.population_density || 0),
+                    weight: 1,
+                    opacity: 1,
+                    color: '#666666',
+                    fillOpacity: 0.5
+                }
+            });
+
+            layer.bindPopup(`
+                <div>
+                    <h6>${props.name}, ${props.country || 'Unknown'}</h6>
+                    <p><strong>Type:</strong> ${props.region_type || 'Unknown'}</p>
+                    <p><strong>Population:</strong> ${(props.total_population || 0).toLocaleString()}</p>
+                    <p><strong>Area:</strong> ${(props.area_km2 || 0).toLocaleString()} km²</p>
+                </div>
+            `);
+
+            layer.on('mouseover', () => showFeatureInfo(props, 'region'));
+            layer.on('mouseout', hideFeatureInfo);
+            regionsLayer.addLayer(layer);
+        });
+    }
+
+    // Summary
+    function updateResultsSummary() {
+        document.getElementById('cities-count').textContent = currentCities.length;
+        document.getElementById('regions-count').textContent = currentRegions.length;
+
+        const totalPopulation = currentCities.reduce((sum, city) => {
+            const props = city.properties || city;
+            return sum + (props.population || 0);
+        }, 0);
+        document.getElementById('total-population').textContent = totalPopulation.toLocaleString();
+    }
+
+    // Filters
+    function getCurrentFilters() {
+        const cityFilters = {};
+        const regionFilters = {};
+        const val = (id) => document.getElementById(id).value;
+
+        if (val('city-pop-min')) cityFilters.population_min = val('city-pop-min');
+        if (val('city-pop-max')) cityFilters.population_max = val('city-pop-max');
+        if (val('region-pop-min')) regionFilters.population_min = val('region-pop-min');
+        if (val('region-pop-max')) regionFilters.population_max = val('region-pop-max');
+
+        if (val('city-area-min')) cityFilters.urban_area_min = val('city-area-min');
+        if (val('city-area-max')) cityFilters.urban_area_max = val('city-area-max');
+        if (val('region-area-min')) regionFilters.area_min = val('region-area-min');
+        if (val('region-area-max')) regionFilters.area_max = val('region-area-max');
+
+        if (val('country-filter')) {
+            cityFilters.country = val('country-filter');
+            regionFilters.country = val('country-filter');
+        }
+        if (val('city-type-filter')) cityFilters.city_type = val('city-type-filter');
+        if (val('region-type-filter')) regionFilters.region_type = val('region-type-filter');
+
+        return { cities: cityFilters, regions: regionFilters };
+    }
+
+    async function applyFilters() {
+        showLoading(true);
+        try {
+            const filters = getCurrentFilters();
+            await Promise.all([loadCities(filters.cities), loadRegions(filters.regions)]);
+            updateResultsSummary();
+        } catch (error) {
+            console.error('Error applying filters:', error);
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    function clearFilters() {
+        document.querySelectorAll('input[type="number"], select').forEach(input => input.value = '');
+        document.getElementById('city-pop-min').value = '0';
+        document.getElementById('region-pop-min').value = '0';
+        loadInitialData();
+    }
+
+    function toggleCitiesLayer() {
+        if (document.getElementById('show-cities').checked) map.addLayer(citiesLayer);
+        else map.removeLayer(citiesLayer);
+    }
+
+    function toggleRegionsLayer() {
+        if (document.getElementById('show-regions').checked) map.addLayer(regionsLayer);
+        else map.removeLayer(regionsLayer);
+    }
+
+    // Export
+    function downloadJSON(obj, filename) {
+        const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    async function exportData(type) {
+        try {
+            const filters = getCurrentFilters();
+            const params = new URLSearchParams(filters[type] || {});
+            const response = await fetch(`/api/${type}/?${params}`);
+            downloadJSON(await response.json(), `${type}_export.geojson`);
+        } catch (error) {
+            console.error('Export error:', error);
+        }
+    }
+
+    async function exportStatistics() {
+        try {
+            const [cityStats, regionStats] = await Promise.all([
+                fetch('/api/cities/statistics/').then(r => r.json()).catch(() => ({})),
+                fetch('/api/regions/statistics/').then(r => r.json()).catch(() => ({}))
+            ]);
+            downloadJSON({
+                export_date: new Date().toISOString(),
+                city_statistics: cityStats,
+                region_statistics: regionStats
+            }, 'statistics_export.json');
+        } catch (error) {
+            console.error('Statistics export error:', error);
+        }
+    }
+
+    // Initial load
+    async function loadInitialData() {
+        showLoading(true);
+        try {
+            await Promise.all([loadCities({}), loadRegions({})]);
+            updateResultsSummary();
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        document.getElementById('apply-filters').addEventListener('click', applyFilters);
+        document.getElementById('clear-filters').addEventListener('click', clearFilters);
+        document.getElementById('show-cities').addEventListener('change', toggleCitiesLayer);
+        document.getElementById('show-regions').addEventListener('change', toggleRegionsLayer);
+        document.getElementById('export-cities').addEventListener('click', () => exportData('cities'));
+        document.getElementById('export-regions').addEventListener('click', () => exportData('regions'));
+        document.getElementById('export-statistics').addEventListener('click', exportStatistics);
+
+        loadInitialData();
+    });
+</script>
+{% endblock %}
